@@ -98,7 +98,7 @@ def capturePage(session, resourceTagList):
     '''Iterate through tags'''
     for tag in resourceTagList:
 
-        '''Check for the icon, if its a folder, create the subfolder,
+        '''Check for the icon, if it is a folder, create the subfolder,
             and enter, then call capturePage for the subfolder page'''
         if tag.findPrevious('img')['src'] == '/images/ds/folder.png':
 
