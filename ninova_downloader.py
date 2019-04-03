@@ -123,9 +123,7 @@ def capturePage(session, resourceTagList):
         else:
             '''Download the rest'''
             r = session.get(url+tag['href'])
-            f = open(tag.text, 'wb')
-            f.write(r.content)
-            f.close()
+            saveFile(r, tag.text.split("/")[0])
 
 
 def captureClass(session, classTag):
