@@ -2,14 +2,13 @@ import requests
 import bs4
 import getpass
 import os
+import datetime
+
+'''Base URL'''
+url = 'http://ninova.itu.edu.tr'
 
 
-def login(s):
-
-    '''Get username'''
-    username = input("username: ")
-    '''Get password with getpass module, cuz muh privacy'''
-    password = getpass.getpass("pass: ")
+def login(s, username, password):
 
     '''Try to get main page of ninova'''
     r = s.get('http://ninova.itu.edu.tr/kampus')
@@ -64,36 +63,36 @@ def saveFile(r, name):
     f.close()
 
 
-def mkdir(classTag):
+def sanitizePath(s):
+    return s.replace('/', '').replace(':', '')
 
-    '''Get cwd'''
-    root = os.getcwd()
 
-    name = classTag.findPrevious('span').text
+def createDir(classTag, rootFolder):
+
+    path = '{}{}{}_({})'.format(rootFolder, 
+                                os.sep,
+                                sanitizePath(classTag.findPrevious('span').text),
+                                sanitizePath(classTag.findNext('span').text)
+                                )
 
     '''Try creating a new folder'''
     try:
-        os.mkdir(name)
+        os.mkdir(path)
 
     except FileExistsError:
         '''If folder exists, create a new one'''
-        print('Folder already exists "'+name+'"')
-        name = name+' (dup)'
-        os.mkdir(name)
-
-    os.chdir(name)
+        print('Folder already exists "'+path+'"')
+        path = path + '_duplicate'
+        os.mkdir(path)
 
     '''Create the necessary subfolders'''
-    os.mkdir('dersDosyalari')
-    os.mkdir('sinifDosyalari')
+    os.mkdir(path + os.sep + 'dersDosyalari')
+    os.mkdir(path + os.sep + 'sinifDosyalari')
 
-    '''Go back'''
-    os.chdir(root)
-
-    return name
+    return path
 
 
-def capturePage(session, resourceTagList):
+def capturePage(session, resourceTagList, rootFolder):
 
     '''Iterate through tags'''
     for tag in resourceTagList:
@@ -102,19 +101,13 @@ def capturePage(session, resourceTagList):
             and enter, then call capturePage for the subfolder page'''
         if tag.findPrevious('img')['src'] == '/images/ds/folder.png':
 
-            '''Get root directory'''
-            root = os.getcwd()
-
-            os.mkdir(tag.text)
-            os.chdir(tag.text)
+            subFolder = rootFolder + os.sep + sanitizePath(tag.text)
+            os.mkdir(subFolder)
 
             soup = getPage(session, url+tag['href'])
             links = getLinks(soup, 'Dosyalari?g')
 
-            capturePage(session, links)
-
-            '''Go back when done'''
-            os.chdir(root)
+            capturePage(session, links, subFolder)
 
         elif tag.findPrevious('img')['src'] == '/images/ds/link.png':
             '''If the icon is a link, dont touch it'''
@@ -123,48 +116,60 @@ def capturePage(session, resourceTagList):
         else:
             '''Download the rest'''
             r = session.get(url+tag['href'])
-            saveFile(r, tag.text.split("/")[0])
+            saveFile(r, rootFolder + os.sep + sanitizePath(tag.text))
 
 
-def captureClass(session, classTag):
-
-    '''Get root directory'''
-    root = os.getcwd()
+def captureClass(session, classTag, rootFolder):
 
     '''Create class folder'''
-    name = mkdir(link)
-    os.chdir(name)
+    newRoot = createDir(classTag, rootFolder)
 
     '''GET and capture lecture files'''
-    pageSoup = getPage(s, url+link['href']+'/DersDosyalari')
+    pageSoup = getPage(session, url+classTag['href']+'/DersDosyalari')
     links = getLinks(pageSoup, 'DersDosyalari?')
-    os.chdir('dersDosyalari')
-    capturePage(session, links)
-    os.chdir('..')
+    path = '{}{}{}'.format(newRoot, os.sep, 'dersDosyalari')
+    capturePage(session, links, path)
 
     '''GET and capture class files'''
-    pageSoup = getPage(s, url+link['href']+'/SinifDosyalari')
+    pageSoup = getPage(session, url+classTag['href']+'/SinifDosyalari')
     links = getLinks(pageSoup, 'SinifDosyalari?')
-    os.chdir('sinifDosyalari')
-    capturePage(session, links)
-
-    '''Go back to root when done'''
-    os.chdir(root)
+    path = '{}{}{}'.format(newRoot, os.sep, 'sinifDosyalari')
+    capturePage(session, links, path)
 
 
-'''Base URL'''
-url = 'http://ninova.itu.edu.tr'
+def run():
 
-'''Create a session for cookie management'''
-s = requests.Session()
+    '''Create a session for cookie management'''
+    s = requests.Session()
 
-'''Login to ITU account'''
-login(s)
+    '''Get creds, get rich'''
+    '''Get username'''
+    username = input("username: ")
+    '''Get password with getpass module, cuz muh privacy'''
+    password = getpass.getpass("pass: ")
 
-'''Get the main page and class links from ninova'''
-kampusSoup = getPage(s, url+'/Kampus1')
-classLinks = getLinks(kampusSoup, 'ErisimAgaci')
+    '''Log onto ITU account'''
+    login(s, username, password)
 
-'''Capture parsed classes'''
-for link in classLinks:
-    captureClass(s, link)
+    '''Get the main page and class links from ninova'''
+    kampusSoup = getPage(s, url+'/Kampus1')
+    classLinks = getLinks(kampusSoup, 'ErisimAgaci')
+
+    '''Create a root folder for the dump'''
+    rootFolder = './{}_{}_{}'.format('ninova',
+                                    username,
+                                    datetime.datetime.now().strftime('%d-%m-%y')
+                                    )
+    try:
+        os.mkdir(rootFolder)
+    except OSError:
+        print('Folder already exists!')
+        return
+
+    '''Capture parsed classes'''
+    for link in classLinks:
+        captureClass(s, link, rootFolder)
+
+
+if __name__ == "__main__":
+    run()
