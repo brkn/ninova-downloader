@@ -5,7 +5,7 @@ import os
 import datetime
 
 '''Base URL'''
-url = 'http://ninova.itu.edu.tr'
+url = 'https://ninova.itu.edu.tr'
 
 
 def login(s, username, password):
