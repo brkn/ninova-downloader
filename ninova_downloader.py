@@ -9,7 +9,6 @@ url = 'https://ninova.itu.edu.tr'
 
 
 def login(s, username, password):
-
     '''Try to get main page of ninova'''
     r = s.get('http://ninova.itu.edu.tr/kampus')
 
@@ -32,18 +31,25 @@ def login(s, username, password):
     return s.post(r.url, data=data)
 
 
-def getPage(session, url):
+# Authentication error raised when wrong login credentials are given
+class AuthError(Exception):
+    pass
 
+
+def getPage(session, url):
     '''GET the url'''
+    kampusPage = session.get(url)   # Code duplication for some reason
     kampusPage = session.get(url)
-    print(kampusPage.url)
+    unsuccessfullURLext = "ogrenci.default.aspx"
+    if kampusPage.url.find(unsuccessfullURLext) != -1:
+        raise AuthError
+    print("Current site: ", kampusPage.url)
 
     '''Return parsed data'''
     return bs4.BeautifulSoup(kampusPage.text, 'html.parser')
 
 
 def getLinks(soup, filterString):
-
     '''Fill the list with relevant links'''
     tags = []
     for line in soup.find_all('a'):
@@ -56,7 +62,6 @@ def getLinks(soup, filterString):
 
 
 def saveFile(r, name):
-
     '''Save the content of response to file "name"'''
     f = open(name, 'wb')
     f.write(r.content)
@@ -68,8 +73,7 @@ def sanitizePath(s):
 
 
 def createDir(classTag, rootFolder):
-
-    path = '{}{}{}_({})'.format(rootFolder, 
+    path = '{}{}{}_({})'.format(rootFolder,
                                 os.sep,
                                 sanitizePath(classTag.findPrevious('span').text),
                                 sanitizePath(classTag.findNext('span').text)
@@ -81,7 +85,7 @@ def createDir(classTag, rootFolder):
 
     except FileExistsError:
         '''If folder exists, create a new one'''
-        print('Folder already exists "'+path+'"')
+        print('Folder already exists "' + path + '"')
         path = path + '_duplicate'
         os.mkdir(path)
 
@@ -93,7 +97,6 @@ def createDir(classTag, rootFolder):
 
 
 def capturePage(session, resourceTagList, rootFolder):
-
     '''Iterate through tags'''
     for tag in resourceTagList:
 
@@ -104,7 +107,7 @@ def capturePage(session, resourceTagList, rootFolder):
             subFolder = rootFolder + os.sep + sanitizePath(tag.text)
             os.mkdir(subFolder)
 
-            soup = getPage(session, url+tag['href'])
+            soup = getPage(session, url + tag['href'])
             links = getLinks(soup, 'Dosyalari?g')
 
             capturePage(session, links, subFolder)
@@ -115,55 +118,65 @@ def capturePage(session, resourceTagList, rootFolder):
 
         else:
             '''Download the rest'''
-            r = session.get(url+tag['href'])
+            r = session.get(url + tag['href'])
             saveFile(r, rootFolder + os.sep + sanitizePath(tag.text))
 
 
 def captureClass(session, classTag, rootFolder):
-
     '''Create class folder'''
     newRoot = createDir(classTag, rootFolder)
 
     '''GET and capture lecture files'''
-    pageSoup = getPage(session, url+classTag['href']+'/DersDosyalari')
+    pageSoup = getPage(session, url + classTag['href'] + '/DersDosyalari')
     links = getLinks(pageSoup, 'DersDosyalari?')
     path = '{}{}{}'.format(newRoot, os.sep, 'dersDosyalari')
     capturePage(session, links, path)
 
     '''GET and capture class files'''
-    pageSoup = getPage(session, url+classTag['href']+'/SinifDosyalari')
+    pageSoup = getPage(session, url + classTag['href'] + '/SinifDosyalari')
     links = getLinks(pageSoup, 'SinifDosyalari?')
     path = '{}{}{}'.format(newRoot, os.sep, 'sinifDosyalari')
     capturePage(session, links, path)
 
 
 def run():
-
     '''Create a session for cookie management'''
     s = requests.Session()
 
-    '''Get creds, get rich'''
-    '''Get username'''
-    username = input("username: ")
-    '''Get password with getpass module, cuz muh privacy'''
-    password = getpass.getpass("pass: ")
-
-    '''Log onto ITU account'''
-    login(s, username, password)
-
     '''Get the main page and class links from ninova'''
-    kampusSoup = getPage(s, url+'/Kampus1')
+    # Check if the user entered their correct credentials
+    loginSuccess = False
+    while not loginSuccess:
+        '''Get creds, get rich'''
+        '''Get username'''
+        username = input("Username: ")
+        '''Get password with getpass module'''
+        password = getpass.getpass("Pass: ")
+
+        '''Log onto ITU account'''
+        login(s, username, password)
+        try:
+            kampusSoup = getPage(s, url + '/Kampus1')
+            loginSuccess = True
+        except AuthError:
+            print("There was an error logging in, please try again.")
+            continue
+
+    print("Login successful!\nDownloading...")
     classLinks = getLinks(kampusSoup, 'ErisimAgaci')
 
     '''Create a root folder for the dump'''
     rootFolder = './{}_{}_{}'.format('ninova',
-                                    username,
-                                    datetime.datetime.now().strftime('%d-%m-%y')
-                                    )
+                                     username,
+                                     datetime.datetime.now().strftime('%d-%m-%y_%H:%M:%S')
+                                     )
     try:
         os.mkdir(rootFolder)
     except OSError:
-        print('Folder already exists!')
+        rootFolder = rootFolder + '_duplicate'
+        # How can one manage starting a code twice in a sec but errors can happen so we need to handle
+        print('Duplicate folder created.')
+        os.mkdir(rootFolder)
         return
 
     '''Capture parsed classes'''
