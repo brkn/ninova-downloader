@@ -92,6 +92,7 @@ def createDir(classTag, rootFolder):
     '''Create the necessary subfolders'''
     os.mkdir(path + os.sep + 'dersDosyalari')
     os.mkdir(path + os.sep + 'sinifDosyalari')
+    os.mkdir(path + os.sep + 'odevKaynakDosyalari')
 
     return path
 
@@ -121,7 +122,6 @@ def capturePage(session, resourceTagList, rootFolder):
             r = session.get(url + tag['href'])
             saveFile(r, rootFolder + os.sep + sanitizePath(tag.text))
 
-
 def captureClass(session, classTag, rootFolder):
     '''Create class folder'''
     newRoot = createDir(classTag, rootFolder)
@@ -138,6 +138,18 @@ def captureClass(session, classTag, rootFolder):
     path = '{}{}{}'.format(newRoot, os.sep, 'sinifDosyalari')
     capturePage(session, links, path)
 
+    '''GET and capture homework files'''
+    parentSoup = getPage(session, url + classTag['href'] + '/Odevler')
+    parentLinks = getLinks(parentSoup, 'Ödevi Görüntüle')
+    homeworkIds = [link['href'].split('/')[-1] for link in parentLinks]
+    #iterate over homework pages by id
+    for id in homeworkIds:
+        pageSoup = getPage(session, url + classTag['href'] + '/Odev/' + id)
+        links = getLinks(pageSoup, id + '?')
+        homeworkName = pageSoup.select('#ctl00_pnlHeader > h1')[0].string.strip()
+        path = '{}{}{}{}{}'.format(newRoot, os.sep, 'odevKaynakDosyalari', os.sep, id + '_' + sanitizePath(homeworkName))
+        os.mkdir(path)
+        capturePage(session, links, path)
 
 def run():
     '''Create a session for cookie management'''
