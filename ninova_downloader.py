@@ -3,6 +3,7 @@ import bs4
 import getpass
 import os
 import datetime
+import shutil
 
 '''Base URL'''
 url = 'https://ninova.itu.edu.tr'
@@ -151,6 +152,20 @@ def captureClass(session, classTag, rootFolder):
         os.mkdir(path)
         capturePage(session, links, path)
 
+def mergeFolders(root_src_dir, root_dst_dir):
+    for src_dir, dirs, files in os.walk(root_src_dir):
+        dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+        for file_ in files:
+            src_file = os.path.join(src_dir, file_)
+            dst_file = os.path.join(dst_dir, file_)
+            if os.path.exists(dst_file):
+                os.remove(dst_file)
+            shutil.copy(src_file, dst_dir)
+
+
+
 def run():
     '''Create a session for cookie management'''
     s = requests.Session()
@@ -177,11 +192,26 @@ def run():
     print("Login successful!\nDownloading...")
     classLinks = getLinks(kampusSoup, 'ErisimAgaci')
 
-    '''Create a root folder for the dump'''
+    # Check if the same user already has a rootFolder
+    ninova_list = os.listdir("./")
+    existing_ninova = False
+    overwrite = 'n'
+    while not existing_ninova:
+        for item in ninova_list:
+            if item.find('{}_{}'.format('ninova',username)) != -1:
+                existing_ninova = True
+                print("The user " + username + " already has a Ninova folder")
+                overwrite = input("Do you want to update the existing folder (y/n): ")
+                existing_path = item
+                break
+        break
+
+
     rootFolder = './{}_{}_{}'.format('ninova',
                                      username,
                                      datetime.datetime.now().strftime('%d-%m-%y_%H:%M:%S')
                                      )
+    '''Create a root folder for the dump'''
     try:
         os.mkdir(rootFolder)
     except OSError:
@@ -195,6 +225,12 @@ def run():
     for link in classLinks:
         captureClass(s, link, rootFolder)
 
+    # Once all the downloads are done, merge old ninova with the new one
+    if existing_ninova and overwrite == 'y':
+        mergeFolders(rootFolder, existing_path)
+        print("Merging finished.")
+        shutil.rmtree(rootFolder)
+        os.rename(f'{existing_path}', f'{rootFolder}')
 
 if __name__ == "__main__":
     run()
