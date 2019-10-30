@@ -128,7 +128,6 @@ def capturePage(session, resourceTagList, rootFolder):
             if not os.path.exists(rootFolder + os.sep + sanitizePath(tag.text)):
                 saveFile(r, name)
 
-
 def captureClass(session, classTag, rootFolder):
     '''Create class folder'''
     newRoot = createDir(classTag, rootFolder)
@@ -154,6 +153,7 @@ def captureClass(session, classTag, rootFolder):
         pageSoup = getPage(session, url + classTag['href'] + '/Odev/' + id)
         links = getLinks(pageSoup, id + '?')
         homeworkName = pageSoup.select('#ctl00_pnlHeader > h1')[0].string.strip()
+
         path = '{}{}{}{}{}'.format(newRoot, os.sep, 'odevKaynakDosyalari', os.sep,
                                    id + '_' + sanitizePath(homeworkName))
         if not os.path.exists(path):
