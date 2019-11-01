@@ -122,6 +122,84 @@ def capturePage(session, resourceTagList, rootFolder):
             r = session.get(url + tag['href'])
             saveFile(r, rootFolder + os.sep + sanitizePath(tag.text))
 
+
+def tabularForm(nestedTableList):
+    tableList = list(nestedTableList)
+    maxCharacters = 50
+    
+    #if type of the item is a string, recursion should end.
+    if isinstance(tableList[0], str):
+        for counter, line in enumerate(tableList):
+            if len(line) > maxCharacters:
+                tableList.insert(counter + 1, line[maxCharacters:])
+                tableList[counter] = line[:maxCharacters]
+    else:
+        #recurse for each item in list
+        for counter, subList in enumerate(tableList):
+            tableList[counter] = tabularForm(subList)
+            
+        #make sure right column and left column have equal amount of items
+        #so that it is easy to concatenate them
+        maxLength = 0
+        for subList in tableList:
+            maxLength = max(maxLength, len(subList))
+        for subList in tableList:
+            subList += [''] * (maxLength - len(subList))
+            
+    return tableList
+
+
+def captureHomeworkDesc(soup, path, name):
+    output = name + '\n-----------\n'
+
+    #get due date from the soup
+    dueDate = soup.find(string="Teslim Bitişi").find_next().get_text().strip()
+    output += "Due date: " + dueDate + '\n-----------\nHomework Description:\n'
+
+    #get homework description from the soup in a list form
+    hwDesc = soup.find(string="Ödev Açıklaması").find_next().get_text().split('\n')
+    hwDesc = list(filter(None, hwDesc))
+    if hwDesc == []:
+        hwDesc = ["No homework description given."]
+        
+    #add homework description to the output
+    for line in tabularForm(hwDesc):
+        output += line + '\n'
+    output += '-----------\nRequested Files:\n'
+
+    #get requested files section, in a list of rows of the table
+    requestedFiles = soup.find(string="İstenen Dosyalar").find_next().find_all("tr")
+    
+    if len(requestedFiles) == 1:
+        #if there's no files requested
+        output += "You are not required to submit any files for the homework.\nFor more information, please contact the course instructor.\n"
+        
+    else:
+        #drop header row of the table and seperate rows in the columns
+        requestedFiles = requestedFiles[1:]
+        table = []
+        for row in requestedFiles:
+            leftColumn = row.find_all("td")[0].get_text().strip().split('\n')
+            leftColumn = [cell.strip() for cell in leftColumn]
+            rightColumn = row.find_all("td")[1].get_text().strip().split('\n')
+            rightColumn = [cell.strip() for cell in rightColumn]
+            table.append([leftColumn, rightColumn])
+            
+        #format the table before joining to output
+        table = tabularForm(table)
+        
+        #add requested files section to the output
+        output += '{:^105}\n'.format('-'*80)
+        for row in table:
+            for counter in range(len(row[0])):
+                output += '{:51} | {:51}\n'.format(row[0][counter].strip(), row[1][counter].strip())
+            output += '{:^105}\n'.format('-'*80)
+        
+    outFile = open(path + os.sep + "homeworkDescription.txt", "w")
+    outFile.write(output)
+    outFile.close()
+
+
 def captureClass(session, classTag, rootFolder):
     '''Create class folder'''
     newRoot = createDir(classTag, rootFolder)
@@ -149,6 +227,7 @@ def captureClass(session, classTag, rootFolder):
         homeworkName = pageSoup.select('#ctl00_pnlHeader > h1')[0].string.strip()
         path = '{}{}{}{}{}'.format(newRoot, os.sep, 'odevKaynakDosyalari', os.sep, id + '_' + sanitizePath(homeworkName))
         os.mkdir(path)
+        captureHomeworkDesc(pageSoup, path, homeworkName)
         capturePage(session, links, path)
 
 def run():
