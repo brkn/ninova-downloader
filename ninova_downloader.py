@@ -7,7 +7,7 @@ import requests
 
 '''Base URL'''
 url = 'https://ninova.itu.edu.tr'
-overwrite = 'n'
+overwrite = False
 
 
 def login(s, username, password):
@@ -81,7 +81,7 @@ def createDir(classTag, rootFolder):
                                 sanitizePath(classTag.findNext('span').text)
                                 )
     global overwrite
-    if overwrite != 'y':
+    if not overwrite:
         '''Try creating a new folder'''
         try:
             os.mkdir(path)
@@ -197,13 +197,17 @@ def run():
             if item.find('{}_{}'.format('ninova', username)) != -1:
                 existing_ninova = True
                 print("The user " + username + " already has a Ninova folder")
-                overwrite = input(
+                overwrite_input = input(
                     "Do you want to update the existing\n{} folder (y/n): ".format(item))
+                if overwrite_input == 'y':
+                    overwrite = True
+                else:
+                    overwrite = False
                 existing_path = item
                 break
         break
 
-    if existing_ninova and overwrite == 'y':
+    if existing_ninova and overwrite:
         rootFolder = existing_path
         newRootName = './{}_{}_{}'.format('ninova',
                                           username,
@@ -230,7 +234,7 @@ def run():
         captureClass(s, link, rootFolder)
 
     # Once all the downloads are done, merge old ninova with the new one
-    if existing_ninova and overwrite == 'y':
+    if existing_ninova and overwrite:
         os.rename(f'{existing_path}', f'{newRootName}')
         print("Updating finished.")
 
