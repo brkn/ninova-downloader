@@ -1,12 +1,13 @@
-import requests
-import bs4
+import datetime
 import getpass
 import os
-import datetime
-import shutil
+
+import bs4
+import requests
 
 '''Base URL'''
 url = 'https://ninova.itu.edu.tr'
+overwrite = False
 
 
 def login(s, username, password):
@@ -39,7 +40,7 @@ class AuthError(Exception):
 
 def getPage(session, url):
     '''GET the url'''
-    kampusPage = session.get(url)   # Code duplication for some reason
+    kampusPage = session.get(url)  # Code duplication for some reason
     kampusPage = session.get(url)
     unsuccessfullURLext = "ogrenci.default.aspx"
     if kampusPage.url.find(unsuccessfullURLext) != -1:
@@ -79,21 +80,22 @@ def createDir(classTag, rootFolder):
                                 sanitizePath(classTag.findPrevious('span').text),
                                 sanitizePath(classTag.findNext('span').text)
                                 )
+    global overwrite
+    if not overwrite:
+        '''Try creating a new folder'''
+        try:
+            os.mkdir(path)
 
-    '''Try creating a new folder'''
-    try:
-        os.mkdir(path)
+        except FileExistsError:
+            '''If folder exists, create a new one'''
+            print('Folder already exists "' + path + '"')
+            path = path + '_duplicate'
+            os.mkdir(path)
 
-    except FileExistsError:
-        '''If folder exists, create a new one'''
-        print('Folder already exists "' + path + '"')
-        path = path + '_duplicate'
-        os.mkdir(path)
-
-    '''Create the necessary subfolders'''
-    os.mkdir(path + os.sep + 'dersDosyalari')
-    os.mkdir(path + os.sep + 'sinifDosyalari')
-    os.mkdir(path + os.sep + 'odevKaynakDosyalari')
+        '''Create the necessary subfolders'''
+        os.mkdir(path + os.sep + 'dersDosyalari')
+        os.mkdir(path + os.sep + 'sinifDosyalari')
+        os.mkdir(path + os.sep + 'odevKaynakDosyalari')
 
     return path
 
@@ -107,7 +109,8 @@ def capturePage(session, resourceTagList, rootFolder):
         if tag.findPrevious('img')['src'] == '/images/ds/folder.png':
 
             subFolder = rootFolder + os.sep + sanitizePath(tag.text)
-            os.mkdir(subFolder)
+            if not os.path.exists(subFolder):
+                os.mkdir(subFolder)
 
             soup = getPage(session, url + tag['href'])
             links = getLinks(soup, 'Dosyalari?g')
@@ -121,7 +124,9 @@ def capturePage(session, resourceTagList, rootFolder):
         else:
             '''Download the rest'''
             r = session.get(url + tag['href'])
-            saveFile(r, rootFolder + os.sep + sanitizePath(tag.text))
+            name = rootFolder + os.sep + sanitizePath(tag.text)
+            if not os.path.exists(rootFolder + os.sep + sanitizePath(tag.text)):
+                saveFile(r, name)
 
 def captureClass(session, classTag, rootFolder):
     '''Create class folder'''
@@ -143,27 +148,17 @@ def captureClass(session, classTag, rootFolder):
     parentSoup = getPage(session, url + classTag['href'] + '/Odevler')
     parentLinks = getLinks(parentSoup, 'Ödevi Görüntüle')
     homeworkIds = [link['href'].split('/')[-1] for link in parentLinks]
-    #iterate over homework pages by id
+    # iterate over homework pages by id
     for id in homeworkIds:
         pageSoup = getPage(session, url + classTag['href'] + '/Odev/' + id)
         links = getLinks(pageSoup, id + '?')
         homeworkName = pageSoup.select('#ctl00_pnlHeader > h1')[0].string.strip()
-        path = '{}{}{}{}{}'.format(newRoot, os.sep, 'odevKaynakDosyalari', os.sep, id + '_' + sanitizePath(homeworkName))
-        os.mkdir(path)
+
+        path = '{}{}{}{}{}'.format(newRoot, os.sep, 'odevKaynakDosyalari', os.sep,
+                                   id + '_' + sanitizePath(homeworkName))
+        if not os.path.exists(path):
+            os.mkdir(path)
         capturePage(session, links, path)
-
-def mergeFolders(root_src_dir, root_dst_dir):
-    for src_dir, dirs, files in os.walk(root_src_dir):
-        dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
-        if not os.path.exists(dst_dir):
-            os.makedirs(dst_dir)
-        for file_ in files:
-            src_file = os.path.join(src_dir, file_)
-            dst_file = os.path.join(dst_dir, file_)
-            if os.path.exists(dst_file):
-                os.remove(dst_file)
-            shutil.copy(src_file, dst_dir)
-
 
 
 def run():
@@ -195,42 +190,54 @@ def run():
     # Check if the same user already has a rootFolder
     ninova_list = os.listdir("./")
     existing_ninova = False
-    overwrite = 'n'
+    existing_path = "/"
+    global overwrite
     while not existing_ninova:
         for item in ninova_list:
-            if item.find('{}_{}'.format('ninova',username)) != -1:
+            if item.find('{}_{}'.format('ninova', username)) != -1:
                 existing_ninova = True
                 print("The user " + username + " already has a Ninova folder")
-                overwrite = input("Do you want to update the existing folder (y/n): ")
+                overwrite_input = input(
+                    "Do you want to update the existing\n{} folder (y/n): ".format(item))
+                if overwrite_input == 'y':
+                    overwrite = True
+                else:
+                    overwrite = False
                 existing_path = item
                 break
         break
 
-
-    rootFolder = './{}_{}_{}'.format('ninova',
-                                     username,
-                                     datetime.datetime.now().strftime('%d-%m-%y_%H:%M:%S')
-                                     )
-    '''Create a root folder for the dump'''
-    try:
-        os.mkdir(rootFolder)
-    except OSError:
-        rootFolder = rootFolder + '_duplicate'
-        # How can one manage starting a code twice in a sec but errors can happen so we need to handle
-        print('Duplicate folder created.')
-        os.mkdir(rootFolder)
-        return
+    if existing_ninova and overwrite:
+        rootFolder = existing_path
+        newRootName = './{}_{}_{}'.format('ninova',
+                                          username,
+                                          datetime.datetime.now().strftime('%d-%m-%y_%H:%M:%S')
+                                          )
+    else:
+        '''Create a root folder for the dump'''
+        rootFolder = './{}_{}_{}'.format('ninova',
+                                         username,
+                                         datetime.datetime.now().strftime('%d-%m-%y_%kH:%M:%S')
+                                         )
+        try:
+            os.mkdir(rootFolder)
+        except OSError:
+            rootFolder = rootFolder + '_duplicate'
+            # How can one manage starting a code twice in a sec
+            # but errors can happen so we need to handle
+            print('Duplicate folder created.')
+            os.mkdir(rootFolder)
+            return
 
     '''Capture parsed classes'''
     for link in classLinks:
         captureClass(s, link, rootFolder)
 
     # Once all the downloads are done, merge old ninova with the new one
-    if existing_ninova and overwrite == 'y':
-        mergeFolders(rootFolder, existing_path)
-        print("Merging finished.")
-        shutil.rmtree(rootFolder)
-        os.rename(f'{existing_path}', f'{rootFolder}')
+    if existing_ninova and overwrite:
+        os.rename(f'{existing_path}', f'{newRootName}')
+        print("Updating finished.")
+
 
 if __name__ == "__main__":
     run()
